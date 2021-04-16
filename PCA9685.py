@@ -77,7 +77,7 @@ class PCA9685:
       print("channel: %d  LED_ON: %d LED_OFF: %d" % (channel,on,off))
 
   def setDutycycle(self, channel, pulse):
-    self.setPWM(channel, 0, int(pulse * int(4096 / 100)))
+    self.setPWM(channel, 0, int(pulse * (4096 - 1)))
 
   def setLevel(self, channel, value):
     if (value == 1):
