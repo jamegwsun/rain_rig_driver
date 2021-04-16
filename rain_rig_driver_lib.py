@@ -18,15 +18,13 @@ class MotorDriver:
         self.BIN2 = 4
 
     def MotorARun(self, speed) -> None:
-        assert speed >= _max_speed, "speed cannot exceed {} %".format(_max_speed)
-        assert speed <= _min_speed, "speed cannot be below {} %".format(_min_speed)
+        validate_speed(speed)
         self.pwm.setDutycycle(self.PWMA, speed)
         self.pwm.setLevel(self.AIN1, _Dir[0])
         self.pwm.setLevel(self.AIN2, _Dir[1])
 
     def MotorBRun(self, speed) -> None:
-        assert speed >= _max_speed, "speed cannot exceed {} %".format(_max_speed)
-        assert speed <= _min_speed, "speed cannot be below {} %".format(_min_speed)
+        validate_speed(speed)
         self.pwm.setDutycycle(self.PWMB, speed)
         self.pwm.setLevel(self.BIN1, _Dir[0])
         self.pwm.setLevel(self.BIN2, _Dir[1])
@@ -34,3 +32,8 @@ class MotorDriver:
     def MotorsStop(self):
         self.pwm.setDutycycle(self.PWMA, 0)
         self.pwm.setDutycycle(self.PWMB, 0)
+
+
+def validate_speed(speed) -> None:
+    assert speed <= _max_speed, "speed cannot exceed {} %".format(_max_speed)
+    assert speed >= _min_speed, "speed cannot be below {} %".format(_min_speed)
