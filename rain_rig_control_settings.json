@@ -1,0 +1,14 @@
+{
+    "rain_rig_settings":
+    {
+        "filter_constant": 0.5,
+        "kp": 0.2,
+        "ki": 0.01,
+        "i_max": 0.5,
+        "i_min": 0,
+        "kd": 0,
+        "d_max": 0,
+        "d_min": 0,
+        "output_range": [0, 1]
+    }
+}
