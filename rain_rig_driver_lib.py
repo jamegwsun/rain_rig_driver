@@ -60,22 +60,26 @@ class MotorDriver:
             i_out = clip(i_out + self.ki * pres_diff * _CTRL_PERIOD, self.i_range[0], self.i_range[1])
             d_out = self.kd * (pres_now - pres_last) / _CTRL_PERIOD
             pid_out = clip(p_out + i_out + d_out, self.output_range[0], self.output_range[1])
-            self.set_motor_A_duty_cycle(pid_out)
-            pres_last = self.get_pressure()
-            print(pres_now, pid_out, time.monotonic(), p_out, i_out, d_out)
+            self.set_motor_A_duty_cycle(pid_out)  # no duration
+            pres_last = pres_now
+            print("Time Elapsed [s]: {}, Pressure [psi]: {:.3f}, Duty cycle: {:.3f}".format(t, pres_now, pid_out))
             time.sleep(t + _CTRL_PERIOD - (time.monotonic() - start_time))
 
-    def set_motor_A_duty_cycle(self, duty_cycle: int):
+    def set_motor_A_duty_cycle(self, duty_cycle: int, duration: Optional[int] = None):
         self.validate_duty_cycle(duty_cycle)
         self.pwm.setDutycycle(self.PWMA, duty_cycle)
         self.pwm.setLevel(self.AIN1, _Dir[0])
         self.pwm.setLevel(self.AIN2, _Dir[1])
 
-    def set_motor_B_duty_cycle(self, duty_cycle: int):
-        self.validate_duty_cycle(duty_cycle)
-        self.pwm.setDutycycle(self.PWMB, duty_cycle)
-        self.pwm.setLevel(self.BIN1, _Dir[0])
-        self.pwm.setLevel(self.BIN2, _Dir[1])
+        if duration:
+            pres_last = self.get_pressure()
+            start_time = time.monotonic()
+            for t in range(0, int(duration), int(_CTRL_PERIOD)):
+                pres_now = self.get_pressure() * self.filter_constant + pres_last * (1 - self.filter_constant)
+                pres_last = pres_now
+                print("Time Elapsed [s]: {}, Pressure [psi]: {:.3f}, Duty cycle: {:.3f}".format(
+                    t, pres_now, duty_cycle))
+                time.sleep(t + _CTRL_PERIOD - (time.monotonic() - start_time))
 
     def stop_motors(self):
         self.pwm.setDutycycle(self.PWMA, 0)
