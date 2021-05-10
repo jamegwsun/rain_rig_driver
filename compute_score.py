@@ -20,6 +20,7 @@ _VID_LENGTH_S = 10  # Compare up to x seconds of footage
 def get_average(values: list) -> float:
     return sum(values) / len(values)
 
+
 def get_baseline_image(files: list) -> np.array:
     while True:
         bl_index = input('\nChoose baseline file index: ')
