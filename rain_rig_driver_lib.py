@@ -7,7 +7,7 @@ import time
 from PCA9685 import PCA9685
 from ADS1263 import ADS1263
 
-_Dir = [0, 1]  # Motor driving direction, [0, 1] is forward, [1, 0] is backward
+_Dir = [1, 0]  # Motor driving direction, [0, 1] is forward, [1, 0] is backward
 _REF = 5.08  # reference voltage for ADC, uncalibrated?
 _PRES_RANGE_PSI = [0, 100]  # Autex pressure transducer pressure detection range
 _PRES_RANGE_VDC = [0.5, 4.5]  # Autex pressure transducer pressure output voltage range
@@ -52,14 +52,17 @@ class MotorDriver:
         start_time = time.monotonic()
         i_out = 0
         pres_last = self.get_pressure()
+
         # PID
         for t in range(0, int(duration), int(_CTRL_PERIOD)):
             pres_now = self.get_pressure() * self.filter_constant + pres_last * (1 - self.filter_constant)
             pres_diff = pres_target - pres_now
+
             p_out = self.kp * pres_diff
             i_out = clip(i_out + self.ki * pres_diff * _CTRL_PERIOD, self.i_range[0], self.i_range[1])
             d_out = self.kd * (pres_now - pres_last) / _CTRL_PERIOD
             pid_out = clip(p_out + i_out + d_out, self.output_range[0], self.output_range[1])
+
             self.set_motor_A_duty_cycle(pid_out)  # no duration
             pres_last = pres_now
             print("Time Elapsed [s]: {}, Pressure [psi]: {:.3f}, Duty cycle: {:.3f}".format(t, pres_now, pid_out))
