@@ -13,9 +13,12 @@ FrameData = NamedTuple("FrameData", [
     ('std_dev', float)
 ])
 
-_FRAME_RATE = 2 # Frames per second
-_VID_LENGTH_S = 10
+_FRAME_RATE = 2  # Frames per second
+_VID_LENGTH_S = 10  # Compare up to x seconds of footage
 
+
+def get_average(values: list) -> float:
+    return sum(values) / len(values)
 
 def get_baseline_image(files: list) -> np.array:
     while True:
@@ -38,7 +41,7 @@ def get_comparison_image(files: list) -> List[np.array]:
             print('Comparison file: {}'.format(fname))
             if fname.endswith('.jpg'):
                 return [cv2.imread(fname).astype('int')]
-            else: # if reading a video
+            else:  # if reading a video
                 ims = []
                 vidcap = cv2.VideoCapture(fname)
                 for t in range(_VID_LENGTH_S * _FRAME_RATE):
@@ -47,6 +50,8 @@ def get_comparison_image(files: list) -> List[np.array]:
                     success, im = vidcap.read()
                     if success:
                         ims.append(im)
+                    else:
+                        break
                 return ims
 
 
@@ -66,9 +71,12 @@ frame_data = []
 
 im_bl = np.sum(im_bl, axis=2) / 3
 
+im_diffs = np.array([])
+
 for im in im_c:
-    _im_c = np.sum(im, axis=2) / 3
-    im_diff = (_im_c - im_bl).flatten()
+    _im = np.sum(im, axis=2) / 3
+    im_diff = (_im - im_bl).flatten()
+    im_diffs = np.concatenate((im_diffs, im_diff), axis=None)
 
     frame_data.append(FrameData(
         rms_mean=np.sqrt(np.sum(im_diff ** 2) / (x_size * y_size)),
@@ -76,7 +84,21 @@ for im in im_c:
         std_dev=np.std(im_diff)
     ))
 
-print(frame_data)
+rms_means = []
+true_means = []
+std_devs = []
 
-plt.hist(im_diff, bins=100)
+print('\nIndividual frame data:')
+for f in frame_data:
+    print(f)
+    rms_means.append(f.rms_mean)
+    true_means.append(f.true_mean)
+    std_devs.append(f.std_dev)
+
+print('\nAverage frame data:')
+print('rms mean: {}'.format(get_average(rms_means)))
+print('true mean: {}'.format(get_average(true_means)))
+print('std dev: {}'.format(get_average(std_devs)))
+
+plt.hist(im_diffs, bins=100)
 plt.show()
