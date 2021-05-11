@@ -8,7 +8,7 @@ from typing import List, NamedTuple
 _ALLOWED_EXT = ['.jpg', '.avi']
 
 FrameData = NamedTuple("FrameData", [
-    ('rms_mean', float),
+    ('rms_error', float),
     ('true_mean', float),
     ('std_dev', float)
 ])
@@ -80,24 +80,24 @@ for im in im_c:
     im_diffs = np.concatenate((im_diffs, im_diff), axis=None)
 
     frame_data.append(FrameData(
-        rms_mean=np.sqrt(np.sum(im_diff ** 2) / (x_size * y_size)),
+        rms_error=np.sqrt(np.sum(im_diff ** 2) / (x_size * y_size)),
         true_mean=np.sum(im_diff) / (x_size * y_size),
         std_dev=np.std(im_diff)
     ))
 
-rms_means = []
+rms_errors = []
 true_means = []
 std_devs = []
 
 print('\nIndividual frame data:')
 for f in frame_data:
     print(f)
-    rms_means.append(f.rms_mean)
+    rms_errors.append(f.rms_error)
     true_means.append(f.true_mean)
     std_devs.append(f.std_dev)
 
 print('\nAverage frame data:')
-print('rms mean: {}'.format(get_average(rms_means)))
+print('rms error: {}'.format(get_average(rms_errors)))
 print('true mean: {}'.format(get_average(true_means)))
 print('std dev: {}'.format(get_average(std_devs)))
 
