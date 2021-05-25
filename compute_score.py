@@ -14,46 +14,48 @@ FrameData = NamedTuple("FrameData", [
 ])
 
 _FRAME_RATE = 2  # Frames per second
-_VID_LENGTH_S = 10  # Compare up to x seconds of footage
+_BL_FRAMES = 5  # Compare up to X frames of baseline
+_C_FRAMES = 20  # Compare up to X frames of comparison footage
+_RGB_RATIO = [1, 1, 1]  # RED, GREEN, BLUE
 
 
-def get_average(values: list) -> float:
+def get_RGB_average(im: np.array) -> np.array:
+    ratios = _RGB_RATIO
+    for i, c in enumerate(ratios):
+        im[:, :, i] *= c
+    return np.sum(im, axis=2) / sum(ratios)
+
+
+def get_num_average(values: list) -> float:
     return sum(values) / len(values)
 
 
-def get_baseline_image(files: list) -> np.array:
+def get_images_from_file(imgfiles: list, is_baseline: bool = False) -> List[np.array]:
+    prompt_name = 'baseline' if is_baseline else 'comparison'
     while True:
-        bl_index = input('\nChoose baseline file index: ')
-        if int(bl_index) in range(0, len(files)):
-            fname = files[int(bl_index)]
-            if not fname.endswith('jpg'):
-                print('Chosen file is not a jpg')
-            else:
-                print('Baseline file: {}'.format(fname))
-                return cv2.imread(fname).astype('int')
-
-
-def get_comparison_image(files: list) -> List[np.array]:
-    while True:
-        comp_index = input('\nChoose comparison file index: ')
-        if int(comp_index) in range(0, len(files)):
-            fname = files[int(comp_index)]
+        f_index = input('\nChoose {} file index: '.format(prompt_name))
+        if int(f_index) in range(0, len(imgfiles)):
+            fname = imgfiles[int(f_index)]
             assert any(fname.endswith(e) for e in _ALLOWED_EXT), 'Extension for file {} not allowed'.format(fname)
-            print('Comparison file: {}'.format(fname))
+            print('{} file: {}'.format(prompt_name, fname))
             if fname.endswith('.jpg'):
                 return [cv2.imread(fname).astype('int')]
             else:  # if reading a video
-                ims = []
+                imgs = []
                 vidcap = cv2.VideoCapture(fname)
-                for t in range(_VID_LENGTH_S * _FRAME_RATE):
-                    vid_time = float(t / _FRAME_RATE)
+                if is_baseline:
+                    total_frames = _BL_FRAMES
+                else:
+                    total_frames = _C_FRAMES
+                for f in range(total_frames):
+                    vid_time = float(f / _FRAME_RATE)
                     vidcap.set(cv2.CAP_PROP_POS_MSEC, vid_time * 1000)
-                    success, im = vidcap.read()
+                    success, img = vidcap.read()
                     if success:
-                        ims.append(im)
+                        imgs.append(img)
                     else:
                         break
-                return ims
+                return imgs
 
 
 if __name__ == "__main__":
@@ -62,27 +64,27 @@ if __name__ == "__main__":
     for i, f in enumerate(files):
         print('{0:4} ---  {1}'.format(str(i), f))
 
-    im_bl: np.array = get_baseline_image(files=files)
-    im_c: List[np.array] = get_comparison_image(files=files)
+    im_bl: List[np.array] = get_images_from_file(imgfiles=files, is_baseline=True)
+    im_c: List[np.array] = get_images_from_file(imgfiles=files)
 
-assert im_bl.shape == im_c[0].shape, 'Image sizes are not equal'
-y_size, x_size, _ = im_bl.shape
+assert im_bl[0].shape == im_c[0].shape, 'Image sizes are not equal'
+y_size, x_size, _ = im_bl[0].shape
 
 frame_data = []
+print('')
 
-im_bl = np.sum(im_bl, axis=2) / 3
-
-im_diffs = np.array([])
-
-for im in im_c:
-    _im = np.sum(im, axis=2) / 3
-    im_diff = (_im - im_bl).flatten()
-    im_diffs = np.concatenate((im_diffs, im_diff), axis=None)
-
+for fi, im in enumerate(im_c):
+    print('Processing frame {} of {}'.format((fi + 1), len(im_c)))
+    im_diffs = np.array([])
+    for b in im_bl:
+        _im = get_RGB_average(im)
+        _b = get_RGB_average(b)
+        # im_diffs is a 1D numpy array
+        im_diffs = np.concatenate((im_diffs, (_im - _b).flatten()), axis=None)
     frame_data.append(FrameData(
-        rms_error=np.sqrt(np.sum(im_diff ** 2) / (x_size * y_size)),
-        true_mean=np.sum(im_diff) / (x_size * y_size),
-        std_dev=np.std(im_diff)
+        rms_error=np.sqrt(np.sum(im_diffs ** 2) / len(im_diffs)),
+        true_mean=np.sum(im_diffs) / len(im_diffs),
+        std_dev=np.std(im_diffs)
     ))
 
 rms_errors = []
@@ -96,10 +98,10 @@ for f in frame_data:
     true_means.append(f.true_mean)
     std_devs.append(f.std_dev)
 
-print('\nAverage frame data:')
-print('rms error: {}'.format(get_average(rms_errors)))
-print('true mean: {}'.format(get_average(true_means)))
-print('std dev: {}'.format(get_average(std_devs)))
+print('\nFrame difference averaged across all frames:')
+print('rms error: {:.2f}'.format(get_num_average(rms_errors)))
+print('true mean: {:.2f}'.format(get_num_average(true_means)))
+print('std dev: {:.2f}'.format(get_num_average(std_devs)))
 
-plt.hist(im_diffs, bins=100)
-plt.show()
+# plt.hist(im_diffs, bins=100)
+# plt.show()
