@@ -14,12 +14,13 @@ FrameData = NamedTuple("FrameData", [
 ])
 
 _FRAME_RATE = 2  # Frames per second
-_BL_FRAMES = 5  # Compare up to X frames of baseline
-_C_FRAMES = 20  # Compare up to X frames of comparison footage
-_RGB_RATIO = [1, 1, 1]  # RED, GREEN, BLUE
+_BL_FRAMES = 1  # Compare up to X frames of baseline
+_C_FRAMES = 10  # Compare up to X frames of comparison footage
+_RGB_RATIO = [10, 1, 1]  # RED, GREEN, BLUE
 
 
 def get_RGB_average(im: np.array) -> np.array:
+    im = im.astype(int)
     ratios = _RGB_RATIO
     for i, c in enumerate(ratios):
         im[:, :, i] *= c
