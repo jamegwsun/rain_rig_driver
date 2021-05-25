@@ -15,12 +15,17 @@ FrameData = NamedTuple("FrameData", [
 
 _FRAME_RATE = 2  # Frames per second
 _BL_FRAMES = 1  # Compare up to X frames of baseline
-_C_FRAMES = 10  # Compare up to X frames of comparison footage
-_RGB_RATIO = [10, 1, 1]  # RED, GREEN, BLUE
+_C_FRAMES = 3  # Compare up to X frames of comparison footage
+_RGB_RATIO = [0.114, 0.587, 0.299]  # Blue, Green, Red
+_LOWER_RGB_BOUNDS = np.array([100, 0, 0])
+_UPPER_RGB_BOUNDS = np.array([255, 80, 80])
+_LOWER_GRAY_BOUNDS = 20
+_UPPER_GRAY_BOUNDS = 255
+_SHOW_FRAME = True
 
 
-def get_RGB_average(im: np.array) -> np.array:
-    im = im.astype(int)
+def convert_RGB(im: np.array) -> np.array:
+    im = im.astype(float)
     ratios = _RGB_RATIO
     for i, c in enumerate(ratios):
         im[:, :, i] *= c
@@ -59,34 +64,63 @@ def get_images_from_file(imgfiles: list, is_baseline: bool = False) -> List[np.a
                 return imgs
 
 
+def filter_RGB(c_frame: np.array, bl_frame: np.array = None):
+    if bl_frame:
+        c_frame = c_frame - bl_frame
+    show_frame(c_frame)
+    mask = cv2.inRange(c_frame, _LOWER_RGB_BOUNDS, _UPPER_RGB_BOUNDS)
+    res = cv2.bitwise_and(c_frame, c_frame, mask=mask)
+    show_frame(mask)
+    return
+
+
+def filter_Greyscale(c_frame: np.array, bl_frame: np.array):
+    c_frame = cv2.cvtColor(c_frame, cv2.COLOR_BGR2GRAY)
+    bl_frame = cv2.cvtColor(bl_frame, cv2.COLOR_BGR2GRAY)
+    show_frame(c_frame)
+    diff = np.absolute(c_frame.astype(int) - bl_frame.astype(int))
+    mask = cv2.inRange(diff, _LOWER_GRAY_BOUNDS, _UPPER_GRAY_BOUNDS)
+    res = cv2.bitwise_and(c_frame, c_frame, mask=mask)
+    show_frame(mask)
+    return
+
+
+def show_frame(frame: np.array, frame_name: str = None, show_frame: bool = _SHOW_FRAME) -> None:
+    if show_frame:
+        cv2.imshow(frame_name, frame)
+        cv2.waitKey(0)
+    return
+
+
 if __name__ == "__main__":
     files = sorted([f for f in os.listdir() if os.path.isfile(f)])
     print('\n{0:10}{1}\n-------------------\n'.format('Index', 'File Name'))
     for i, f in enumerate(files):
         print('{0:4} ---  {1}'.format(str(i), f))
 
-    im_bl: List[np.array] = get_images_from_file(imgfiles=files, is_baseline=True)
-    im_c: List[np.array] = get_images_from_file(imgfiles=files)
+    bl_frames: List[np.array] = get_images_from_file(imgfiles=files, is_baseline=True)
+    c_frames: List[np.array] = get_images_from_file(imgfiles=files)
 
-assert im_bl[0].shape == im_c[0].shape, 'Image sizes are not equal'
-y_size, x_size, _ = im_bl[0].shape
+assert bl_frames[0].shape == c_frames[0].shape, 'Image sizes are not equal'
+y_size, x_size, _ = bl_frames[0].shape
 
 frame_data = []
 print('')
 
-for fi, im in enumerate(im_c):
-    print('Processing frame {} of {}'.format((fi + 1), len(im_c)))
+for fi, c_frame in enumerate(c_frames):
+    print('Processing frame {} of {}'.format((fi + 1), len(c_frames)))
     im_diffs = np.array([])
-    for b in im_bl:
-        _im = get_RGB_average(im)
-        _b = get_RGB_average(b)
+    for bl_frame in bl_frames:
+        _c = convert_RGB(c_frame)
+        _bl = convert_RGB(bl_frame)
         # im_diffs is a 1D numpy array
-        im_diffs = np.concatenate((im_diffs, (_im - _b).flatten()), axis=None)
+        im_diffs = np.concatenate((im_diffs, (_c - _bl).flatten()), axis=None)
     frame_data.append(FrameData(
         rms_error=np.sqrt(np.sum(im_diffs ** 2) / len(im_diffs)),
         true_mean=np.sum(im_diffs) / len(im_diffs),
         std_dev=np.std(im_diffs)
     ))
+    filter_Greyscale(c_frame, bl_frame)
 
 rms_errors = []
 true_means = []
@@ -104,5 +138,5 @@ print('rms error: {:.2f}'.format(get_num_average(rms_errors)))
 print('true mean: {:.2f}'.format(get_num_average(true_means)))
 print('std dev: {:.2f}'.format(get_num_average(std_devs)))
 
-# plt.hist(im_diffs, bins=100)
-# plt.show()
+plt.hist(im_diffs, bins=100)
+plt.show()
