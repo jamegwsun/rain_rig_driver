@@ -1,6 +1,4 @@
-import time
 import argparse
-
 from rain_rig_driver_lib import run_motor
 
 
@@ -8,13 +6,13 @@ def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "-p", dest="pressure_psi", type=float, required=True,
-        help="Rain rig target pressure, override by duty cycle")
+        help="Rain rig target pressure, override by the duty cycle flag -d.")
     parser.add_argument(
-        "-t", dest="duration_s", type=int, required=True,
-        help="Rain rig operation duration in seconds.")
+        "-t", dest="duration_s", type=int, required=False, default=60,
+        help="Rain rig operation duration in seconds, defaults to 60 seconds.")
     parser.add_argument(
         "-d", dest="duty_cycle", type=float, required=False, default=0,
-        help="Option to directly set duty cycle. Bypasses pressure target and PID control")
+        help="Option to directly set duty cycle. Bypasses pressure target and PID control.")
     return parser.parse_args()
 
 

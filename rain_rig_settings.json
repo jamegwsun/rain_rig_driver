@@ -1,0 +1,15 @@
+{
+    "filter_constant": 0.5,
+    "kp": 0.05,
+    "ki": 0.03,
+    "kd": 0.05,
+    "i_range": [0, 0.9],
+    "d_range": [0, 1],
+    "output_range": [0, 1],
+    "control_period_s": 1,
+    "drive_direction": [1, 0],
+    "adc_vref": 5.08,
+    "pres_range_vdc": [0.5, 4.5],
+    "pres_range_psi": [0, 100],
+    "adc_pressure_channel": 9
+}
