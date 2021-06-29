@@ -1,88 +1,88 @@
 import numpy as np
-import matplotlib.pyplot as plt
 import cv2
 import os
+import argparse
 
-from typing import List, NamedTuple
+from typing import List, Optional
 
-_ALLOWED_EXT = ['.jpg', '.avi']
 
-FrameData = NamedTuple("FrameData", [
-    ('rms_error', float),
-    ('true_mean', float),
-    ('std_dev', float)
-])
+_ALLOWED_EXT = ['.avi']  # only accepts .avi files for now
 
-_FRAME_RATE = 2  # Frames per second
-_BL_FRAMES = 1  # Compare up to X frames of baseline
-_C_FRAMES = 3  # Compare up to X frames of comparison footage
-_RGB_RATIO = [0.114, 0.587, 0.299]  # Blue, Green, Red
-_LOWER_RGB_BOUNDS = np.array([100, 0, 0])
-_UPPER_RGB_BOUNDS = np.array([255, 80, 80])
-_LOWER_GRAY_BOUNDS = 20
-_UPPER_GRAY_BOUNDS = 255
+_FRAMES_PER_SEC = 1  # Take X frames from each second of footage
+_BASELINE_FRAME_COUNT = 5  # Merge up to X frames of baseline footage
+_COMP_FRAME_COUNT = 10  # Compare up to X frames of comparison footage
+_LOWER_GRAY_BOUNDS = -255
+_UPPER_GRAY_BOUNDS = -60
 _SHOW_FRAME = True
+_X_CROP_LIMITS: Optional[list] = None
+_Y_CROP_LIMITS: Optional[list] = [0, 950]
+_WHITE_AREA_FRACTION = 33/100
 
 
-def convert_RGB(im: np.array) -> np.array:
-    im = im.astype(float)
-    ratios = _RGB_RATIO
-    for i, c in enumerate(ratios):
-        im[:, :, i] *= c
-    return np.sum(im, axis=2) / sum(ratios)
+def parse_args():
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "-ns", dest="no_save_files", required=False, default=False, action='store_true',
+        help="Use this flag to avoid saving baseline, comparison, diff, and mask image files.")
+    return parser.parse_args()
 
 
-def get_num_average(values: list) -> float:
-    return sum(values) / len(values)
+def process_frame(frame: np.array) -> np.array:
+    # expect intake: BGR frame, convert to grayscale first
+    frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+
+    # crop frame
+    y_max, x_max = frame.shape
+    y_limit = [_Y_CROP_LIMITS[0], _Y_CROP_LIMITS[1]] if _Y_CROP_LIMITS else [0, y_max]
+    x_limit = [_X_CROP_LIMITS[0], _X_CROP_LIMITS[1]] if _X_CROP_LIMITS else [0, x_max]
+    return frame[y_limit[0]:y_limit[1], x_limit[0]:x_limit[1]]
 
 
-def get_images_from_file(imgfiles: list, is_baseline: bool = False) -> List[np.array]:
+def average_baseline_frames(baseline_frames: list) -> np.array:
+    return (sum([f.astype('int') for f in baseline_frames])/len(baseline_frames)).astype('uint8')
+
+
+def get_grayscale_frames_from_file(frame_files: list, is_baseline: bool = False) -> List[np.array]:
     prompt_name = 'baseline' if is_baseline else 'comparison'
+    # A rough implementation of prompting user input to pick from a list of files with a few edge cases checks
     while True:
-        f_index = input('\nChoose {} file index: '.format(prompt_name))
-        if int(f_index) in range(0, len(imgfiles)):
-            fname = imgfiles[int(f_index)]
+        file_index = input('\nChoose {} file index: '.format(prompt_name))
+        if int(file_index) in range(0, len(frame_files)):
+            fname = frame_files[int(file_index)]
             assert any(fname.endswith(e) for e in _ALLOWED_EXT), 'Extension for file {} not allowed'.format(fname)
             print('{} file: {}'.format(prompt_name, fname))
-            if fname.endswith('.jpg'):
-                return [cv2.imread(fname).astype('int')]
-            else:  # if reading a video
-                imgs = []
-                vidcap = cv2.VideoCapture(fname)
-                if is_baseline:
-                    total_frames = _BL_FRAMES
+
+            frames = []
+            vc = cv2.VideoCapture(fname)
+            frame_count = _BASELINE_FRAME_COUNT if is_baseline else _COMP_FRAME_COUNT
+            for f in range(frame_count):
+                vid_time = float(f / _FRAMES_PER_SEC)
+                vc.set(cv2.CAP_PROP_POS_MSEC, vid_time * 1000)
+                success, frame = vc.read()
+                # read and append frames until it can't anymore...
+                if success:
+                    frames.append(process_frame(frame))
                 else:
-                    total_frames = _C_FRAMES
-                for f in range(total_frames):
-                    vid_time = float(f / _FRAME_RATE)
-                    vidcap.set(cv2.CAP_PROP_POS_MSEC, vid_time * 1000)
-                    success, img = vidcap.read()
-                    if success:
-                        imgs.append(img)
-                    else:
-                        break
-                return imgs
+                    break
+            return frames, fname.split('.')[0]
 
 
-def filter_RGB(c_frame: np.array, bl_frame: np.array = None):
-    if bl_frame:
-        c_frame = c_frame - bl_frame
-    show_frame(c_frame)
-    mask = cv2.inRange(c_frame, _LOWER_RGB_BOUNDS, _UPPER_RGB_BOUNDS)
-    res = cv2.bitwise_and(c_frame, c_frame, mask=mask)
-    show_frame(mask)
-    return
-
-
-def filter_Greyscale(c_frame: np.array, bl_frame: np.array):
-    c_frame = cv2.cvtColor(c_frame, cv2.COLOR_BGR2GRAY)
-    bl_frame = cv2.cvtColor(bl_frame, cv2.COLOR_BGR2GRAY)
-    show_frame(c_frame)
-    diff = np.absolute(c_frame.astype(int) - bl_frame.astype(int))
+def filter_grayscale(comp_frame: np.array, baseline_frame: np.array, comp_name: str, save_images: bool):
+    # abs_diff is only used as saved image, non-absolute diff is used to generate mask
+    abs_diff = np.absolute(comp_frame.astype(int) - baseline_frame.astype(int))
+    diff = comp_frame.astype(int) - baseline_frame.astype(int)
+    # thresholding for white lines that turned dark due to water droplets
     mask = cv2.inRange(diff, _LOWER_GRAY_BOUNDS, _UPPER_GRAY_BOUNDS)
-    res = cv2.bitwise_and(c_frame, c_frame, mask=mask)
-    show_frame(mask)
-    return
+
+    # save comparison, diff, and mask images
+    if save_images:
+        cv2.imwrite("{}/{}_comp.png".format(comp_name, comp_name), comp_frame)
+        cv2.imwrite("{}/{}_diff.png".format(comp_name, comp_name), abs_diff)
+        cv2.imwrite("{}/{}_mask.png".format(comp_name, comp_name), mask)
+
+    # since thresholding produces either values of 0 or 255
+    # divide array sum by 255 to get the number of white pixels in mask
+    return int(np.sum(mask) / 255)
 
 
 def show_frame(frame: np.array, frame_name: str = None, show_frame: bool = _SHOW_FRAME) -> None:
@@ -93,50 +93,48 @@ def show_frame(frame: np.array, frame_name: str = None, show_frame: bool = _SHOW
 
 
 if __name__ == "__main__":
-    files = sorted([f for f in os.listdir() if os.path.isfile(f)])
+    args = parse_args()
+
+    # list all files in current directory
+    files = sorted([f for f in os.listdir() if any(f.endswith(e) for e in _ALLOWED_EXT)])
     print('\n{0:10}{1}\n-------------------\n'.format('Index', 'File Name'))
     for i, f in enumerate(files):
         print('{0:4} ---  {1}'.format(str(i), f))
+    print('\n')
 
-    bl_frames: List[np.array] = get_images_from_file(imgfiles=files, is_baseline=True)
-    c_frames: List[np.array] = get_images_from_file(imgfiles=files)
+    # get baseline and comparison grayscale frames from file via user prompt
+    baseline_frames, baseline_name = get_grayscale_frames_from_file(frame_files=files, is_baseline=True)
+    comp_frames, comp_name = get_grayscale_frames_from_file(frame_files=files)
 
-assert bl_frames[0].shape == c_frames[0].shape, 'Image sizes are not equal'
-y_size, x_size, _ = bl_frames[0].shape
+    assert baseline_frames[0].shape == comp_frames[0].shape, 'Image sizes are not equal'
+    y_size, x_size = baseline_frames[0].shape
+    total_pixels = y_size * x_size
 
-frame_data = []
-print('')
+    # average all grayscale baseline frames into one grayscale frame
+    baseline_frame = average_baseline_frames(baseline_frames=baseline_frames)
 
-for fi, c_frame in enumerate(c_frames):
-    print('Processing frame {} of {}'.format((fi + 1), len(c_frames)))
-    im_diffs = np.array([])
-    for bl_frame in bl_frames:
-        _c = convert_RGB(c_frame)
-        _bl = convert_RGB(bl_frame)
-        # im_diffs is a 1D numpy array
-        im_diffs = np.concatenate((im_diffs, (_c - _bl).flatten()), axis=None)
-    frame_data.append(FrameData(
-        rms_error=np.sqrt(np.sum(im_diffs ** 2) / len(im_diffs)),
-        true_mean=np.sum(im_diffs) / len(im_diffs),
-        std_dev=np.std(im_diffs)
-    ))
-    filter_Greyscale(c_frame, bl_frame)
+    # save baseline image
+    if not args.no_save_files:
+        if not os.path.exists(comp_name):
+            os.makedirs(comp_name)
+        cv2.imwrite("{}/{}_baseline.png".format(comp_name, comp_name), baseline_frame)
 
-rms_errors = []
-true_means = []
-std_devs = []
+    frame_data = []
+    for frame_index, comp_frame in enumerate(comp_frames):
+        print('Processing frame {} of {}'.format((frame_index + 1), len(comp_frames)))
+        # append the number of 1s in the mask
+        frame_data.append(filter_grayscale(comp_frame=comp_frame,
+                                           baseline_frame=baseline_frame,
+                                           comp_name=comp_name,
+                                           save_images=not(args.no_save_files)))
 
-print('\nIndividual frame data:')
-for f in frame_data:
-    print(f)
-    rms_errors.append(f.rms_error)
-    true_means.append(f.true_mean)
-    std_devs.append(f.std_dev)
+    print("\n" + "-" * 40)
+    print("{}:\n".format(comp_name))
+    print("Raw data: {}".format(frame_data))
+    print("Mean: {:.1f}".format(np.average(frame_data)))
+    print("Std. Dev.: {:.1f}".format(np.std(frame_data)))
 
-print('\nFrame difference averaged across all frames:')
-print('rms error: {:.2f}'.format(get_num_average(rms_errors)))
-print('true mean: {:.2f}'.format(get_num_average(true_means)))
-print('std dev: {:.2f}'.format(get_num_average(std_devs)))
-
-plt.hist(im_diffs, bins=100)
-plt.show()
+    area_corrected_mean = np.average(frame_data) / _WHITE_AREA_FRACTION
+    print("\nArea corrected mean: {:.1f}".format(area_corrected_mean))
+    print("Area corrected droplet coverage: {:.2f}%".format(area_corrected_mean / total_pixels * 100))
+    print("-" * 40)
