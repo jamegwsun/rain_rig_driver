@@ -14,8 +14,8 @@ _COMP_FRAME_COUNT = 10  # Compare up to X frames of comparison footage
 _LOWER_GRAY_BOUNDS = -255
 _UPPER_GRAY_BOUNDS = -60
 _SHOW_FRAME = True
-_X_CROP_LIMITS: Optional[list] = None
-_Y_CROP_LIMITS: Optional[list] = [0, 950]
+_X_CROP_LIMITS = [300, 1600]  # cropped pixels in X
+_Y_CROP_LIMITS = [0, 950]  # cropped pixels in Y
 _WHITE_AREA_FRACTION = 33/100
 
 
@@ -67,18 +67,25 @@ def get_grayscale_frames_from_file(frame_files: list, is_baseline: bool = False)
             return frames, fname.split('.')[0]
 
 
-def filter_grayscale(comp_frame: np.array, baseline_frame: np.array, comp_name: str, save_images: bool):
+def filter_grayscale(comp_frame: np.array, baseline_frame: np.array, comp_name: str,
+                     save_images: bool, image_index: int):
     # abs_diff is only used as saved image, non-absolute diff is used to generate mask
-    abs_diff = np.absolute(comp_frame.astype(int) - baseline_frame.astype(int))
+    abs_diff = np.absolute(comp_frame.astype(int) - baseline_frame.astype(int)).astype('uint8')
     diff = comp_frame.astype(int) - baseline_frame.astype(int)
     # thresholding for white lines that turned dark due to water droplets
     mask = cv2.inRange(diff, _LOWER_GRAY_BOUNDS, _UPPER_GRAY_BOUNDS)
 
     # save comparison, diff, and mask images
     if save_images:
-        cv2.imwrite("{}/{}_comp.png".format(comp_name, comp_name), comp_frame)
-        cv2.imwrite("{}/{}_diff.png".format(comp_name, comp_name), abs_diff)
-        cv2.imwrite("{}/{}_mask.png".format(comp_name, comp_name), mask)
+        cv2.imwrite("{}/{}_{}_comp.png".format(comp_name, comp_name, image_index), comp_frame)
+        show_frame(comp_frame)
+
+        cv2.imwrite("{}/{}_{}_diff.png".format(comp_name, comp_name, image_index), abs_diff)
+        show_frame(abs_diff)
+
+        cv2.imwrite("{}/{}_{}_mask.png".format(comp_name, comp_name, image_index), mask)
+        show_frame(mask)
+
 
     # since thresholding produces either values of 0 or 255
     # divide array sum by 255 to get the number of white pixels in mask
@@ -126,7 +133,8 @@ if __name__ == "__main__":
         frame_data.append(filter_grayscale(comp_frame=comp_frame,
                                            baseline_frame=baseline_frame,
                                            comp_name=comp_name,
-                                           save_images=not(args.no_save_files)))
+                                           save_images=not(args.no_save_files),
+                                           image_index=frame_index))
 
     print("\n" + "-" * 40)
     print("{}:\n".format(comp_name))
